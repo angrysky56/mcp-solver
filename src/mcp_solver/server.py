@@ -56,7 +56,7 @@ async def serve() -> None:
         return [
             types.Prompt(
                 name="Guidelines",
-                description="Basic instructions for iusing the tools, get this prompt at before any interaction with mcp-solver",
+                description="Basic instructions for using the tools, get this prompt before any interaction with mcp-solver",
                 arguments=[]
             )
         ]
@@ -83,23 +83,6 @@ async def serve() -> None:
                 )
             ]
         )
-
-
-    def format_array_access(variable_name: str, indices: List[int]) -> str:
-        return variable_name if not indices else f"{variable_name}[{','.join(str(i) for i in indices)}]"
-
-    def get_array_value(array: Any, indices: List[int]) -> Any:
-        if not indices:
-            return array
-        if not hasattr(array, "__getitem__"):
-            raise ValueError("Variable is not an array")
-            
-        try:
-            return array[indices[0]-1] if len(indices) == 1 else get_array_value(array[indices[0]-1], indices[1:])
-        except IndexError:
-            raise ValueError(f"Index {indices[0]} is out of bounds")
-        except TypeError:
-            raise ValueError("Invalid index type")
 
     @server.list_tools()
     async def list_tools() -> List[types.Tool]:
@@ -149,7 +132,6 @@ async def serve() -> None:
     async def handle_call_tool(name: str, arguments: dict) -> List[types.TextContent]:
         try:
             match name:
-                
                 case "get_model":
                     items = model_mgr.get_model()
                     if not items:
@@ -162,19 +144,17 @@ async def serve() -> None:
                     return [types.TextContent(type="text", 
                         text=f"Item added\nCurrent model:\n{format_model_items(items, ITEM_CHARS)}")]
 
-
                 case "delete_item":
                     await model_mgr.delete_item(arguments["index"])
                     items = model_mgr.get_model()
                     return [types.TextContent(type="text", 
-                        text=f"Item added\nCurrent model:\n{format_model_items(items, ITEM_CHARS)}")]
-
+                        text=f"Item deleted\nCurrent model:\n{format_model_items(items, ITEM_CHARS)}")]
 
                 case "replace_item":
                     await model_mgr.replace_item(arguments["index"], arguments["content"])
                     items = model_mgr.get_model()
                     return [types.TextContent(type="text", 
-                        text=f"Item added\nCurrent model:\n{format_model_items(items, ITEM_CHARS)}")]
+                        text=f"Item replaced\nCurrent model:\n{format_model_items(items, ITEM_CHARS)}")]
 
                 case "clear_model":
                     model_mgr.clear_model()
@@ -209,7 +189,7 @@ async def serve() -> None:
                             var_display = var_name
                         return [types.TextContent(type="text", text=f"{var_display} = {val}")]
                     except ValueError as e:
-                        return [types.TextContent(type="text", text=f"Error accessing {var_name}: {str(e)}")]
+                        raise McpError(f"Error accessing {var_name}: {str(e)}")
 
                 case "get_solve_time":
                     solve_time = model_mgr.get_solve_time()
@@ -229,13 +209,13 @@ async def serve() -> None:
                     return [types.TextContent(type="text", text="Memo updated")]
 
                 case _:
-                    raise ValueError(f"Unknown tool: {name}")
+                    raise McpError(f"Unknown tool: {name}")
 
         except Exception as e:
             logger.error("Tool execution failed", exc_info=True)
-            raise McpError("Tool execution failed", str(e))
-    
-    
+            if isinstance(e, McpError):
+                raise e
+            raise McpError(f"Tool execution failed: {str(e)}")
 
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(
@@ -248,7 +228,6 @@ async def serve() -> None:
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},
                 ),
-              
             ),
         )
 
